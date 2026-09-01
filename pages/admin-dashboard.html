@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - JSC Canteen Food Hub</title>
+    <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+    <!-- Navigation Bar -->
+    <nav class="navbar">
+        <h2>⚙️ Admin Dashboard</h2>
+        <div class="user-info">
+            <span class="user-info-display"></span>
+            <span class="user-role">ADMIN</span>
+            <button class="btn-logout">Logout</button>
+        </div>
+    </nav>
+
+    <div class="dashboard-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <h3>Management</h3>
+            <ul class="sidebar-menu">
+                <li><a href="#" class="menu-link active" data-page="admin-overview">Overview</a></li>
+                <li><a href="#" class="menu-link" data-page="inventory-management">Inventory</a></li>
+                <li><a href="#" class="menu-link" data-page="stock-alerts">Stock Alerts</a></li>
+                <li><a href="#" class="menu-link" data-page="sales-tracking">Sales Tracking</a></li>
+                <li><a href="#" class="menu-link" data-page="reports">Reports</a></li>
+            </ul>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Overview Page -->
+            <div id="admin-overview" class="page-content active">
+                <h1 class="page-title">Admin Overview</h1>
+                
+                <div class="stats-container">
+                    <div class="stat-card">
+                        <h4>Total Menu Items</h4>
+                        <div class="value" id="adminTotalMenuItems">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <h4>Items in Stock</h4>
+                        <div class="value" id="adminTotalStock">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <h4>Low Stock Alerts</h4>
+                        <div class="value" id="adminLowStockAlerts">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <h4>Total Sales</h4>
+                        <div class="value" id="adminTotalSales">$0.00</div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h3>Quick Actions</h3>
+                    <button class="btn btn-primary" onclick="navigateAdminPage('inventory-management')">
+                        📦 Manage Inventory
+                    </button>
+                    <button class="btn btn-secondary" onclick="navigateAdminPage('stock-alerts')">
+                        ⚠️ View Alerts
+                    </button>
+                    <button class="btn btn-secondary" onclick="navigateAdminPage('reports')">
+                        📊 Generate Reports
+                    </button>
+                </div>
+
+                <div class="section">
+                    <h3>Critical Alerts</h3>
+                    <div id="criticalAlertsList"></div>
+                </div>
+            </div>
+
+            <!-- Inventory Management Page -->
+            <div id="inventory-management" class="page-content">
+                <h1 class="page-title">Inventory Management</h1>
+                
+                <div class="section">
+                    <h3>Add New Ingredient to Stock</h3>
+                    <form id="addStockForm" class="add-stock-form">
+                        <div class="form-group">
+                            <label for="ingredientName">Ingredient Name</label>
+                            <input type="text" id="ingredientName" name="ingredientName" placeholder="e.g., Chicken Breast" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="quantity">Quantity</label>
+                            <input type="number" id="quantity" name="quantity" placeholder="0" step="0.01" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="unit">Unit</label>
+                            <select id="unit" name="unit" required>
+                                <option value="">Select Unit</option>
+                                <option value="kg">Kilograms (kg)</option>
+                                <option value="lb">Pounds (lb)</option>
+                                <option value="liter">Liters</option>
+                                <option value="piece">Pieces</option>
+                                <option value="dozen">Dozen</option>
+                                <option value="box">Box</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="lowStockThreshold">Low Stock Threshold</label>
+                            <input type="number" id="lowStockThreshold" name="lowStockThreshold" placeholder="0" step="0.01" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="costPerUnit">Cost Per Unit ($)</label>
+                            <input type="number" id="costPerUnit" name="costPerUnit" placeholder="0.00" step="0.01" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Add to Inventory</button>
+                    </form>
+                </div>
+
+                <div class="section">
+                    <h3>Current Inventory</h3>
+                    <div class="table-responsive">
+                        <table id="inventoryTable">
+                            <thead>
+                                <tr>
+                                    <th>Ingredient</th>
+                                    <th>Quantity</th>
+                                    <th>Unit</th>
+                                    <th>Threshold</th>
+                                    <th>Status</th>
+                                    <th>Total Cost</th>
+                                    <th>Last Updated</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="inventoryTableBody">
+                            </tbody>
+                        </table>
+                    </div>
+                    <p id="noInventoryMessage" style="text-align: center; color: #999; margin-top: 20px;">
+                        No inventory items yet. Add one to get started!
+                    </p>
+                </div>
+            </div>
+
+            <!-- Stock Alerts Page -->
+            <div id="stock-alerts" class="page-content">
+                <h1 class="page-title">Stock Alerts & Notifications</h1>
+                
+                <div class="section">
+                    <h3>⚠️ Low Stock Alerts</h3>
+                    <div id="stockAlertsList"></div>
+                </div>
+
+                <div class="section">
+                    <h3>📋 All Stock Status</h3>
+                    <div class="table-responsive">
+                        <table id="stockStatusTable">
+                            <thead>
+                                <tr>
+                                    <th>Ingredient</th>
+                                    <th>Current Stock</th>
+                                    <th>Threshold</th>
+                                    <th>Status</th>
+                                    <th>Action Required</th>
+                                </tr>
+                            </thead>
+                            <tbody id="stockStatusBody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sales Tracking Page -->
+            <div id="sales-tracking" class="page-content">
+                <h1 class="page-title">Sales Tracking</h1>
+                
+                <div class="section">
+                    <h3>Record Menu Item Sale</h3>
+                    <form id="recordSaleForm" class="record-sale-form">
+                        <div class="form-group">
+                            <label for="saleMenuItem">Menu Item</label>
+                            <select id="saleMenuItem" name="saleMenuItem" required>
+                                <option value="">Select Menu Item</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="saleQuantity">Quantity Sold</label>
+                            <input type="number" id="saleQuantity" name="saleQuantity" placeholder="1" min="1" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="salePrice">Sale Price ($)</label>
+                            <input type="number" id="salePrice" name="salePrice" placeholder="0.00" step="0.01" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Record Sale</button>
+                    </form>
+                </div>
+
+                <div class="section">
+                    <h3>Sales Records</h3>
+                    <div class="table-responsive">
+                        <table id="salesTable">
+                            <thead>
+                                <tr>
+                                    <th>Item</th>
+                                    <th>Quantity</th>
+                                    <th>Price</th>
+                                    <th>Date</th>
+                                </tr>
+                            </thead>
+                            <tbody id="salesTableBody">
+                            </tbody>
+                        </table>
+                    </div>
+                    <p id="noSalesMessage" style="text-align: center; color: #999; margin-top: 20px;">
+                        No sales recorded yet.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Reports Page -->
+            <div id="reports" class="page-content">
+                <h1 class="page-title">Reports & Analytics</h1>
+                
+                <div class="section">
+                    <h3>Generate Report</h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                        <button class="btn btn-secondary" onclick="generateReport('inventory')">
+                            📦 Inventory Report
+                        </button>
+                        <button class="btn btn-secondary" onclick="generateReport('sales')">
+                            💰 Sales Report
+                        </button>
+                        <button class="btn btn-secondary" onclick="generateReport('alerts')">
+                            ⚠️ Alerts Report
+                        </button>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h3>Summary Statistics</h3>
+                    <div id="reportSummary"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal for Updating Stock -->
+    <div id="updateStockModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Update Stock Quantity</h3>
+                <button class="modal-close" onclick="closeAdminModal('updateStockModal')">&times;</button>
+            </div>
+            <form id="updateStockForm">
+                <input type="hidden" id="updateStockId">
+                <div class="form-group">
+                    <label for="updateQuantity">New Quantity</label>
+                    <input type="number" id="updateQuantity" step="0.01" required>
+                </div>
+                <div class="form-group">
+                    <label for="updateNote">Note (optional)</label>
+                    <textarea id="updateNote" rows="3" placeholder="e.g., New delivery received"></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary">Update Stock</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="../js/dashboard.js"></script>
+    <script src="../js/admin-dashboard.js"></script>
+</body>
+</html>
