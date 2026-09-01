@@ -1,12 +1,13 @@
 /* ============================================
-   LOGIN.JS - Authentication Handler
+   UPDATED LOGIN.JS - Backend Integration
+   Connects to PHP backend for authentication
    ============================================ */
 
 document.addEventListener('DOMContentLoaded', function() {
     const loginForm = document.getElementById('loginForm');
     const errorMessage = document.getElementById('errorMessage');
 
-    loginForm.addEventListener('submit', function(e) {
+    loginForm.addEventListener('submit', async function(e) {
         e.preventDefault();
 
         const username = document.getElementById('username').value.trim();
@@ -22,21 +23,43 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        // Demo credentials validation
-        if (role === 'chef') {
-            if (username === 'chef' && password === 'chef123') {
-                loginSuccess('chef', 'Chef Dashboard');
+        // Attempt backend login
+        try {
+            const response = await fetch('backend/api/auth.php?action=login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    username: username,
+                    password: password,
+                    role: role
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                // Store authentication data
+                localStorage.setItem('authToken', data.token);
+                localStorage.setItem('userRole', data.user.role);
+                localStorage.setItem('username', data.user.username);
+                localStorage.setItem('userId', data.user.id);
+                localStorage.setItem('loginTime', new Date().getTime());
+
+                // Redirect to appropriate dashboard
+                if (data.user.role === 'chef') {
+                    window.location.href = 'pages/chef-dashboard.html';
+                } else if (data.user.role === 'admin') {
+                    window.location.href = 'pages/admin-dashboard.html';
+                }
             } else {
-                showError('Invalid chef credentials. Use chef/chef123');
+                showError(data.message || 'Login failed. Please try again.');
             }
-        } else if (role === 'admin') {
-            if (username === 'admin' && password === 'admin123') {
-                loginSuccess('admin', 'Admin Dashboard');
-            } else {
-                showError('Invalid admin credentials. Use admin/admin123');
-            }
-        } else {
-            showError('Please select a valid role');
+        } catch (error) {
+            console.error('Login error:', error);
+            // Fallback to demo credentials if backend unavailable
+            handleDemoLogin(username, password, role);
         }
     });
 
@@ -48,7 +71,24 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 5000);
     }
 
-    function loginSuccess(role, dashboardName) {
+    // Fallback demo login for development
+    function handleDemoLogin(username, password, role) {
+        if (role === 'chef') {
+            if (username === 'chef' && password === 'chef123') {
+                loginSuccess('chef');
+            } else {
+                showError('Invalid chef credentials. Use chef/chef123');
+            }
+        } else if (role === 'admin') {
+            if (username === 'admin' && password === 'admin123') {
+                loginSuccess('admin');
+            } else {
+                showError('Invalid admin credentials. Use admin/admin123');
+            }
+        }
+    }
+
+    function loginSuccess(role) {
         // Store user session in localStorage
         localStorage.setItem('userRole', role);
         localStorage.setItem('username', document.getElementById('username').value);
