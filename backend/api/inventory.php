@@ -1,165 +1,158 @@
 <?php
-/**
- * Inventory API
- * Handles CRUD operations for inventory/stock items
- * GET /api/inventory.php - Get all inventory
- * GET /api/inventory.php?low=1 - Get low stock items
- * POST /api/inventory.php - Add stock item
- * PUT /api/inventory.php?id=X - Update stock
- * DELETE /api/inventory.php?id=X - Delete stock item
- */
+/* ============================================
+   INVENTORY API
+   CRUD operations for stock items
+   ============================================ */
 
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
+header('Access-Control-Allow-Headers: Content-Type, Authorization');
 
-require_once '../config/Database.php';
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit();
+}
+
+require_once '../config/database.php';
+require_once '../utils/helpers.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
-$db = new Database();
-$conn = $db->connect();
+$input = json_decode(file_get_contents('php://input'), true);
 
-switch ($method) {
-    case 'GET':
-        if (isset($_GET['low'])) {
-            getLowStockItems($conn);
-        } else {
-            getAllInventory($conn);
+// Verify authentication
+$user = verifyToken();
+if (!$user || $user['role'] !== 'admin') {
+    http_response_code(401);
+    echo json_encode(['success' => false, 'message' => 'Admin access required']);
+    exit();
+}
+
+if ($method === 'GET') {
+    getInventory();
+} elseif ($method === 'POST') {
+    addStock($input);
+} elseif ($method === 'PUT') {
+    updateStock($input);
+} elseif ($method === 'DELETE') {
+    deleteStock($_GET['id'] ?? null);
+} else {
+    http_response_code(405);
+    echo json_encode(['success' => false, 'message' => 'Method not allowed']);
+}
+
+function getInventory() {
+    global $conn;
+    
+    $query = "SELECT id, name, quantity, unit, low_stock_threshold, cost_per_unit, status, last_updated FROM inventory_stocks ORDER BY name ASC";
+    $result = $conn->query($query);
+    
+    if ($result) {
+        $items = [];
+        while ($row = $result->fetch_assoc()) {
+            $items[] = $row;
         }
-        break;
-    case 'POST':
-        addStock($conn);
-        break;
-    case 'PUT':
-        updateStock($conn);
-        break;
-    case 'DELETE':
-        deleteStock($conn);
-        break;
-    default:
-        http_response_code(405);
-        echo json_encode(['success' => false, 'message' => 'Method not allowed']);
-}
-
-function getAllInventory($conn) {
-    try {
-        $query = 'SELECT * FROM inventory ORDER BY status DESC, name ASC';
-        $stmt = $conn->prepare($query);
-        $stmt->execute();
-        $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        echo json_encode([
-            'success' => true,
-            'data' => $items,
-            'total' => count($items)
-        ]);
-    } catch (PDOException $e) {
+        http_response_code(200);
+        echo json_encode(['success' => true, 'data' => $items]);
+    } else {
         http_response_code(500);
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        echo json_encode(['success' => false, 'message' => 'Database error']);
     }
 }
 
-function getLowStockItems($conn) {
-    try {
-        $query = 'SELECT * FROM inventory WHERE quantity <= low_stock_threshold ORDER BY quantity ASC';
-        $stmt = $conn->prepare($query);
-        $stmt->execute();
-        $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        echo json_encode([
-            'success' => true,
-            'data' => $items,
-            'total' => count($items)
-        ]);
-    } catch (PDOException $e) {
-        http_response_code(500);
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
-    }
-}
-
-function addStock($conn) {
-    try {
-        $data = json_decode(file_get_contents('php://input'), true);
-        
-        if (!isset($data['name']) || !isset($data['quantity']) || !isset($data['low_stock_threshold'])) {
+function addStock($input) {
+    global $conn;
+    
+    $required = ['name', 'quantity', 'unit', 'low_stock_threshold', 'cost_per_unit'];
+    foreach ($required as $field) {
+        if (!isset($input[$field])) {
             http_response_code(400);
-            echo json_encode(['success' => false, 'message' => 'Missing required fields']);
+            echo json_encode(['success' => false, 'message' => "Missing field: $field"]);
             return;
         }
-
-        $status = $data['quantity'] <= $data['low_stock_threshold'] ? 'low' : 'normal';
-        
-        $query = 'INSERT INTO inventory (name, quantity, unit, low_stock_threshold, cost_per_unit, status) 
-                  VALUES (:name, :quantity, :unit, :threshold, :cost, :status)';
-        $stmt = $conn->prepare($query);
-        
-        $stmt->bindParam(':name', $data['name']);
-        $stmt->bindParam(':quantity', $data['quantity']);
-        $stmt->bindParam(':unit', $data['unit'] ?? 'kg');
-        $stmt->bindParam(':threshold', $data['low_stock_threshold']);
-        $stmt->bindParam(':cost', $data['cost_per_unit'] ?? 0);
-        $stmt->bindParam(':status', $status);
-        
-        $stmt->execute();
-        
-        echo json_encode([
-            'success' => true,
-            'message' => 'Stock item added successfully',
-            'id' => $conn->lastInsertId()
-        ]);
-    } catch (PDOException $e) {
+    }
+    
+    $name = $conn->real_escape_string($input['name']);
+    $quantity = (float)$input['quantity'];
+    $unit = $conn->real_escape_string($input['unit']);
+    $threshold = (float)$input['low_stock_threshold'];
+    $cost = (float)$input['cost_per_unit'];
+    $status = $quantity <= $threshold ? 'Low' : 'Normal';
+    
+    $query = "INSERT INTO inventory_stocks (name, quantity, unit, low_stock_threshold, cost_per_unit, status) 
+              VALUES ('$name', $quantity, '$unit', $threshold, $cost, '$status')";
+    
+    if ($conn->query($query)) {
+        http_response_code(201);
+        echo json_encode(['success' => true, 'message' => 'Stock item added', 'id' => $conn->insert_id]);
+    } else {
         http_response_code(500);
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        echo json_encode(['success' => false, 'message' => 'Database error: ' . $conn->error]);
     }
 }
 
-function updateStock($conn) {
-    try {
-        $id = isset($_GET['id']) ? $_GET['id'] : null;
-        if (!$id) {
-            http_response_code(400);
-            echo json_encode(['success' => false, 'message' => 'ID parameter required']);
-            return;
+function updateStock($input) {
+    global $conn;
+    
+    if (!isset($input['id'])) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => 'Missing stock ID']);
+        return;
+    }
+    
+    $id = (int)$input['id'];
+    $updates = [];
+    
+    if (isset($input['quantity'])) {
+        $quantity = (float)$input['quantity'];
+        $updates[] = "quantity = $quantity";
+        
+        // Check threshold and update status
+        $result = $conn->query("SELECT low_stock_threshold FROM inventory_stocks WHERE id = $id");
+        if ($result && $row = $result->fetch_assoc()) {
+            $status = $quantity <= $row['low_stock_threshold'] ? 'Low' : 'Normal';
+            $updates[] = "status = '$status'";
         }
-
-        $data = json_decode(file_get_contents('php://input'), true);
-        $status = $data['quantity'] <= $data['low_stock_threshold'] ? 'low' : 'normal';
-        
-        $query = 'UPDATE inventory SET quantity = :quantity, status = :status WHERE id = :id';
-        $stmt = $conn->prepare($query);
-        
-        $stmt->bindParam(':id', $id);
-        $stmt->bindParam(':quantity', $data['quantity']);
-        $stmt->bindParam(':status', $status);
-        
-        $stmt->execute();
-        
-        echo json_encode(['success' => true, 'message' => 'Stock updated successfully']);
-    } catch (PDOException $e) {
+    }
+    
+    if (isset($input['low_stock_threshold'])) $updates[] = "low_stock_threshold = " . (float)$input['low_stock_threshold'];
+    if (isset($input['cost_per_unit'])) $updates[] = "cost_per_unit = " . (float)$input['cost_per_unit'];
+    
+    if (empty($updates)) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => 'No fields to update']);
+        return;
+    }
+    
+    $query = "UPDATE inventory_stocks SET " . implode(', ', $updates) . " WHERE id = $id";
+    
+    if ($conn->query($query)) {
+        http_response_code(200);
+        echo json_encode(['success' => true, 'message' => 'Stock updated']);
+    } else {
         http_response_code(500);
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        echo json_encode(['success' => false, 'message' => 'Database error']);
     }
 }
 
-function deleteStock($conn) {
-    try {
-        $id = isset($_GET['id']) ? $_GET['id'] : null;
-        if (!$id) {
-            http_response_code(400);
-            echo json_encode(['success' => false, 'message' => 'ID parameter required']);
-            return;
-        }
-
-        $query = 'DELETE FROM inventory WHERE id = :id';
-        $stmt = $conn->prepare($query);
-        $stmt->bindParam(':id', $id);
-        $stmt->execute();
-        
-        echo json_encode(['success' => true, 'message' => 'Stock deleted successfully']);
-    } catch (PDOException $e) {
+function deleteStock($id) {
+    global $conn;
+    
+    if (!$id) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => 'Missing stock ID']);
+        return;
+    }
+    
+    $id = (int)$id;
+    $query = "DELETE FROM inventory_stocks WHERE id = $id";
+    
+    if ($conn->query($query)) {
+        http_response_code(200);
+        echo json_encode(['success' => true, 'message' => 'Stock deleted']);
+    } else {
         http_response_code(500);
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        echo json_encode(['success' => false, 'message' => 'Database error']);
     }
 }
 ?>

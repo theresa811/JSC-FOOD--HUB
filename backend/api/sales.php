@@ -1,114 +1,91 @@
 <?php
-/**
- * Sales Tracking API
- * Handles sales records and revenue tracking
- * GET /api/sales.php - Get all sales records
- * POST /api/sales.php - Record new sale
- * GET /api/sales.php?stats=1 - Get sales statistics
- */
+/* ============================================
+   SALES API
+   Handle sales records and tracking
+   ============================================ */
 
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
+header('Access-Control-Allow-Headers: Content-Type, Authorization');
 
-require_once '../config/Database.php';
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit();
+}
+
+require_once '../config/database.php';
+require_once '../utils/helpers.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
-$db = new Database();
-$conn = $db->connect();
+$input = json_decode(file_get_contents('php://input'), true);
 
-switch ($method) {
-    case 'GET':
-        if (isset($_GET['stats'])) {
-            getSalesStats($conn);
-        } else {
-            getAllSales($conn);
-        }
-        break;
-    case 'POST':
-        recordSale($conn);
-        break;
-    default:
-        http_response_code(405);
-        echo json_encode(['success' => false, 'message' => 'Method not allowed']);
+// Verify authentication
+$user = verifyToken();
+if (!$user || $user['role'] !== 'admin') {
+    http_response_code(401);
+    echo json_encode(['success' => false, 'message' => 'Admin access required']);
+    exit();
 }
 
-function getAllSales($conn) {
-    try {
-        $query = 'SELECT sr.*, mi.name as item_name FROM sales_records sr 
-                  LEFT JOIN menu_items mi ON sr.menu_item_id = mi.id 
-                  ORDER BY sr.sold_at DESC';
-        $stmt = $conn->prepare($query);
-        $stmt->execute();
-        $sales = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        
-        echo json_encode([
-            'success' => true,
-            'data' => $sales,
-            'total' => count($sales)
-        ]);
-    } catch (PDOException $e) {
+if ($method === 'GET') {
+    getSalesRecords();
+} elseif ($method === 'POST') {
+    recordSale($input, $user['id']);
+} else {
+    http_response_code(405);
+    echo json_encode(['success' => false, 'message' => 'Method not allowed']);
+}
+
+function getSalesRecords() {
+    global $conn;
+    
+    $query = "SELECT sr.id, sr.menu_item_id, mi.name, sr.quantity, sr.price, sr.total_amount, sr.timestamp 
+              FROM sales_records sr 
+              LEFT JOIN menu_items mi ON sr.menu_item_id = mi.id 
+              ORDER BY sr.timestamp DESC";
+    
+    $result = $conn->query($query);
+    
+    if ($result) {
+        $records = [];
+        while ($row = $result->fetch_assoc()) {
+            $records[] = $row;
+        }
+        http_response_code(200);
+        echo json_encode(['success' => true, 'data' => $records]);
+    } else {
         http_response_code(500);
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        echo json_encode(['success' => false, 'message' => 'Database error']);
     }
 }
 
-function recordSale($conn) {
-    try {
-        $data = json_decode(file_get_contents('php://input'), true);
-        
-        if (!isset($data['menu_item_id']) || !isset($data['quantity']) || !isset($data['unit_price'])) {
+function recordSale($input, $userId) {
+    global $conn;
+    
+    $required = ['menu_item_id', 'quantity', 'price'];
+    foreach ($required as $field) {
+        if (!isset($input[$field])) {
             http_response_code(400);
-            echo json_encode(['success' => false, 'message' => 'Missing required fields']);
+            echo json_encode(['success' => false, 'message' => "Missing field: $field"]);
             return;
         }
-
-        $total_price = $data['quantity'] * $data['unit_price'];
-        
-        $query = 'INSERT INTO sales_records (menu_item_id, quantity, unit_price, total_price) 
-                  VALUES (:menu_item_id, :quantity, :unit_price, :total_price)';
-        $stmt = $conn->prepare($query);
-        
-        $stmt->bindParam(':menu_item_id', $data['menu_item_id']);
-        $stmt->bindParam(':quantity', $data['quantity']);
-        $stmt->bindParam(':unit_price', $data['unit_price']);
-        $stmt->bindParam(':total_price', $total_price);
-        
-        $stmt->execute();
-        
-        echo json_encode([
-            'success' => true,
-            'message' => 'Sale recorded successfully',
-            'id' => $conn->lastInsertId(),
-            'total_price' => $total_price
-        ]);
-    } catch (PDOException $e) {
-        http_response_code(500);
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
     }
-}
-
-function getSalesStats($conn) {
-    try {
-        $query = 'SELECT 
-                  COUNT(*) as total_sales,
-                  SUM(quantity) as total_items_sold,
-                  SUM(total_price) as total_revenue,
-                  AVG(total_price) as avg_sale_value,
-                  MAX(total_price) as highest_sale
-                  FROM sales_records';
-        $stmt = $conn->prepare($query);
-        $stmt->execute();
-        $stats = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        echo json_encode([
-            'success' => true,
-            'data' => $stats
-        ]);
-    } catch (PDOException $e) {
+    
+    $menuItemId = (int)$input['menu_item_id'];
+    $quantity = (int)$input['quantity'];
+    $price = (float)$input['price'];
+    $totalAmount = $price * $quantity;
+    
+    $query = "INSERT INTO sales_records (menu_item_id, quantity, price, total_amount, recorded_by) 
+              VALUES ($menuItemId, $quantity, $price, $totalAmount, $userId)";
+    
+    if ($conn->query($query)) {
+        http_response_code(201);
+        echo json_encode(['success' => true, 'message' => 'Sale recorded', 'id' => $conn->insert_id]);
+    } else {
         http_response_code(500);
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        echo json_encode(['success' => false, 'message' => 'Database error: ' . $conn->error]);
     }
 }
 ?>
